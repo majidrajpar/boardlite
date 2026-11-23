@@ -5,6 +5,8 @@ BoardLite is a local dashboard for one person. Open CSV or Excel files in the br
 ## Run it
 
 ```bash
+git clone https://github.com/majidrajpar/boardlite.git
+cd boardlite
 npm install
 npm run dev
 ```
@@ -19,7 +21,7 @@ Sample files live in `testdata/`. `testdata/MANIFEST.json` records what each fil
 - Add a relationship from a column on one table to a column on another. A tile can group by a column on the related table. The link is one hop, from the tile's table to the table it points at. If a key matches more than one row, the first row is used.
 - Save a measure as `count`, `sum`, `avg`, `min`, or `max` of one column, and use it on a tile.
 - Filter the whole page, or filter a single tile. Both filters apply together. A page filter that names a column the tile does not have is skipped for that tile.
-- Paste a URL on a table and choose Reload URLs. The host must allow this page to fetch the file.
+- Paste a URL on a table and choose Reload URLs. The host must allow this page to fetch the file. The URL is saved with the report, so do not paste an address that contains an access key.
 - Export the report as JSON, or import one. The file holds the layout, not the rows.
 - Copy a read-only link. The link holds the report definition in the URL hash, not the data. The reader opens the same files or uses the same URLs. Save a copy stores that report in the browser.
 
