@@ -17,19 +17,26 @@
         <button id="reload" type="button">Reload URLs</button>
         <button id="share" class="edit" type="button">Copy link</button>
         <button id="keep" type="button" hidden>Save a copy</button>
-        <button id="export" type="button">Export</button>
-        <label class="file edit">Import<input id="import" type="file" accept="application/json,.json" /></label>
+        <button id="export" type="button">Export Excel</button>
+        <label class="edit">Reports<select id="reports"></select></label>
+        <button id="new-report" class="edit" type="button">New report</button>
+        <button id="undo" type="button">Undo</button>
       </div>
     </header>
+    <details class="top restore edit">
+      <summary>Restore layout</summary>
+      <label class="file">Choose a report JSON<input id="import" type="file" accept="application/json,.json" /></label>
+    </details>
     <p id="status" role="status"></p>
     <p id="drop" class="drop">Drop CSV or Excel files here.</p>
     <section id="model"></section>
     <section id="columns"></section>
     <form id="page-filters"></form>
     <form id="add-tile"></form>
+    <p id="tile-hint"></p>
     <main id="canvas"></main>
     <dialog id="confirm">
-      <p>Replace the current report with this file?</p>
+      <p id="confirm-text">Replace the current report with this file?</p>
       <form method="dialog">
         <button value="cancel">Cancel</button>
         <button value="ok">Replace</button>

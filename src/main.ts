@@ -1,20 +1,24 @@
 import * as Plot from "@observablehq/plot";
+import { workbookBytes } from "./export-xlsx";
 import { loadFile, type LoadedTable } from "./load";
 import { expandModel, qualify, type Join } from "./model";
 import { pageFiltersFor, runQuery, type Agg, type Filter, type Query } from "./query";
+import { columnDrift } from "./reload-check";
 import {
   decodeReport,
   emptyReport,
   encodeReport,
-  loadStoredReport,
+  loadLibrary,
   reportFromJson,
-  saveReport,
+  saveLibrary,
+  type Library,
   type Measure,
   type Relationship,
   type Report,
   type TableMeta,
   type Tile,
 } from "./report";
+import { tileReason, type GroupType } from "./tile-rules";
 
 const status = document.querySelector<HTMLElement>("#status")!;
 const columnsEl = document.querySelector<HTMLElement>("#columns")!;
@@ -24,14 +28,64 @@ const pageForm = document.querySelector<HTMLFormElement>("#page-filters")!;
 const addForm = document.querySelector<HTMLFormElement>("#add-tile")!;
 const modelEl = document.querySelector<HTMLElement>("#model")!;
 const confirmDialog = document.querySelector<HTMLDialogElement>("#confirm")!;
+const confirmText = document.querySelector<HTMLElement>("#confirm-text")!;
+const tileHint = document.querySelector<HTMLElement>("#tile-hint")!;
 const keepButton = document.querySelector<HTMLButtonElement>("#keep")!;
+const reportsSelect = document.querySelector<HTMLSelectElement>("#reports")!;
 
 const opened = new Map<string, LoadedTable>();
-let report: Report = emptyReport();
+let library: Library = { version: 1, activeId: "untitled", reports: [{ id: "untitled", name: "Untitled", report: emptyReport() }] };
+let report: Report = library.reports[0].report;
 let shared = false;
+const undoStack: { tiles: Tile[]; pageFilters: Filter[] }[] = [];
 
 function uid(): string {
   return crypto.randomUUID();
+}
+
+function remember() {
+  undoStack.push(structuredClone({ tiles: report.tiles, pageFilters: report.pageFilters }));
+  if (undoStack.length > 20) undoStack.shift();
+}
+
+function undo() {
+  const previous = undoStack.pop();
+  if (!previous) {
+    renderStatus("Nothing to undo.");
+    return;
+  }
+  report.tiles = previous.tiles;
+  report.pageFilters = previous.pageFilters;
+  void persist();
+  render();
+}
+
+function groupTypeOf(column: string): GroupType | null {
+  const dot = column.indexOf(".");
+  if (dot < 0) return null;
+  const tableName = column.slice(0, dot);
+  const columnName = column.slice(dot + 1);
+  const meta = report.tables.find((table) => table.name === tableName);
+  const data = meta ? opened.get(meta.id) : undefined;
+  const type = data?.columns.find((item) => item.name === columnName)?.type;
+  return type && type !== "null" ? type : type === "null" ? "null" : null;
+}
+
+function columnsUsedBy(tableName: string): { title: string; columns: string[] }[] {
+  return report.tiles.map((tile) => {
+    const names = [...tile.query.groupBy, ...tile.query.filters.map((filter) => filter.column), ...report.pageFilters.map((filter) => filter.column)];
+    if (tile.query.measure?.column) names.push(tile.query.measure.column);
+    const columns = names.filter((name) => name.startsWith(`${tableName}.`)).map((name) => name.slice(tableName.length + 1));
+    return { title: tile.title, columns };
+  });
+}
+
+function askConfirm(message: string): Promise<boolean> {
+  confirmText.textContent = message;
+  confirmDialog.showModal();
+  return new Promise((resolve) => {
+    confirmDialog.addEventListener("close", () => resolve(confirmDialog.returnValue === "ok"), { once: true });
+  });
 }
 
 function stem(fileName: string): string {
@@ -183,6 +237,7 @@ function filterEditor(filters: Filter[], addLabel: string): HTMLElement {
     remove.textContent = "Remove";
     remove.className = "edit";
     remove.addEventListener("click", () => {
+      remember();
       filters.splice(index, 1);
       persist();
       render();
@@ -211,6 +266,7 @@ function filterEditor(filters: Filter[], addLabel: string): HTMLElement {
     if (!name) return;
     const filter = readFilter(name, op.value, value.value, end.value);
     if (!filter) return;
+    remember();
     filters.push(filter);
     persist();
     render();
@@ -273,13 +329,18 @@ function renderModel() {
   };
   fromTable.addEventListener("change", () => fillColumns(fromTable.value, fromColumn));
   toTable.addEventListener("change", () => fillColumns(toTable.value, toColumn));
+  fillColumns(fromTable.value, fromColumn);
+  fillColumns(toTable.value, toColumn);
   const addLink = document.createElement("button");
   addLink.type = "button";
   addLink.textContent = "Add relationship";
   addLink.addEventListener("click", () => {
     const from = report.tables.find((table) => table.name === fromTable.value);
     const to = report.tables.find((table) => table.name === toTable.value);
-    if (!from || !to || !fromColumn.value || !toColumn.value) return;
+    if (!from || !to || !fromColumn.value || !toColumn.value) {
+      renderStatus("Choose both tables and both columns.");
+      return;
+    }
     const relationship: Relationship = { id: uid(), fromTable: from.id, fromColumn: fromColumn.value, toTable: to.id, toColumn: toColumn.value };
     report.relationships.push(relationship);
     persist();
@@ -307,8 +368,26 @@ function renderModel() {
   const measureName = document.createElement("input");
   measureName.placeholder = "Measure name";
   const measureTable = select(report.tables.map((table) => table.name), "", "Table");
-  const measureColumn = document.createElement("input");
-  measureColumn.placeholder = "Column";
+  const measureColumn = select([], "", "Column");
+  const fillMeasureColumns = () => {
+    const meta = report.tables.find((table) => table.name === measureTable.value);
+    const names = meta ? opened.get(meta.id)?.columns.map((column) => column.name) ?? [] : [];
+    const current = measureColumn.value;
+    measureColumn.replaceChildren();
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "Column";
+    measureColumn.append(blank);
+    for (const name of names) {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      measureColumn.append(option);
+    }
+    measureColumn.value = names.includes(current) ? current : "";
+  };
+  measureTable.addEventListener("change", fillMeasureColumns);
+  fillMeasureColumns();
   const measureAgg = document.createElement("select");
   for (const value of ["sum", "count", "avg", "min", "max"]) {
     const option = document.createElement("option");
@@ -374,6 +453,7 @@ function renderAddForm() {
     }
   };
   tablePick.addEventListener("change", refill);
+  refill();
   const agg = document.createElement("select");
   for (const value of ["sum", "count", "avg", "min", "max"]) {
     const option = document.createElement("option");
@@ -389,11 +469,13 @@ function renderAddForm() {
     event.preventDefault();
     const owner = report.tables.find((table) => table.name === tablePick.value) ?? report.tables[0];
     const saved = report.measures.find((item) => item.name === measure.value);
-    const reason = tileReason(kind.value, group.value, measure.value);
+    const reason = tileReason(kind.value, group.value, measure.value, group.value ? groupTypeOf(group.value) : null);
+    tileHint.textContent = reason ?? "";
     if (reason || !owner) {
-      renderStatus(reason ?? "Open a file first.");
+      if (!owner) tileHint.textContent = "Open a CSV or Excel file.";
       return;
     }
+    remember();
     const query: Query = {
       table: owner.id,
       groupBy: group.value ? [group.value] : [],
@@ -411,12 +493,6 @@ function field(label: string, control: HTMLElement): HTMLLabelElement {
   const wrap = document.createElement("label");
   wrap.append(document.createTextNode(label), control);
   return wrap;
-}
-
-function tileReason(kind: string, group: string, measure: string): string | null {
-  if (kind === "kpi" && (group || !measure)) return "A KPI needs one measure and no group.";
-  if ((kind === "bar" || kind === "line") && (!group || !measure)) return "A chart needs a group and a measure.";
-  return null;
 }
 
 function bare(column: string): string {
@@ -444,6 +520,7 @@ function renderTile(tile: Tile) {
   up.addEventListener("click", () => move(tile.id, -1));
   down.addEventListener("click", () => move(tile.id, 1));
   remove.addEventListener("click", () => {
+    remember();
     report.tiles = report.tiles.filter((item) => item.id !== tile.id);
     persist();
     render();
@@ -538,6 +615,7 @@ function move(id: string, direction: number) {
   const index = report.tiles.findIndex((tile) => tile.id === id);
   const next = index + direction;
   if (index < 0 || next < 0 || next >= report.tiles.length) return;
+  remember();
   const [tile] = report.tiles.splice(index, 1);
   report.tiles.splice(next, 0, tile);
   persist();
@@ -548,6 +626,7 @@ function render() {
   document.body.classList.toggle("readonly", shared);
   keepButton.hidden = !shared;
   nameEl.textContent = report.name || "Untitled";
+  renderReportList();
   renderModel();
   renderColumns();
   renderPageFilters();
@@ -555,9 +634,25 @@ function render() {
   canvas.replaceChildren(...report.tiles.map(renderTile));
 }
 
+function renderReportList() {
+  reportsSelect.replaceChildren();
+  for (const saved of library.reports) {
+    const option = document.createElement("option");
+    option.value = saved.id;
+    option.textContent = saved.name || saved.report.name || "Untitled";
+    option.selected = saved.id === library.activeId;
+    reportsSelect.append(option);
+  }
+}
+
 async function persist() {
   if (shared) return;
-  const outcome = await saveReport(report);
+  const saved = library.reports.find((item) => item.id === library.activeId);
+  if (saved) {
+    saved.report = report;
+    saved.name = report.name || "Untitled";
+  }
+  const outcome = await saveLibrary(library);
   if (outcome === "unavailable") renderStatus("This browser will not keep the report.");
 }
 
@@ -588,6 +683,7 @@ async function bindFile(file: File) {
 }
 
 async function reloadUrls() {
+  const pending: { id: string; loaded: LoadedTable }[] = [];
   let refreshed = 0;
   for (const meta of report.tables) {
     if (!meta.sourceUrl) continue;
@@ -601,13 +697,28 @@ async function reloadUrls() {
         renderStatus(`Refused ${meta.sourceUrl}: ${loaded.refuseReason.replaceAll("_", " ")}.`);
         return;
       }
-      opened.set(meta.id, loaded);
+      const current = opened.get(meta.id);
+      const drift = columnDrift(
+        current?.columns.map((column) => column.name) ?? [],
+        loaded.columns.map((column) => column.name),
+        columnsUsedBy(meta.name),
+      );
+      if (drift.length) {
+        const lines = drift.map((item) => `${item.title}: ${item.missing.join(", ")}`).join("\n");
+        const ok = await askConfirm(`These tiles use columns the new file does not have:\n${lines}`);
+        if (!ok) {
+          renderStatus("Reload cancelled. The current rows are unchanged.");
+          return;
+        }
+      }
+      pending.push({ id: meta.id, loaded });
       refreshed += 1;
     } catch {
       renderStatus(`Could not reload ${meta.name}. The URL must allow this page to fetch it.`);
       return;
     }
   }
+  for (const item of pending) opened.set(item.id, item.loaded);
   renderStatus(refreshed ? `Reloaded ${refreshed} table${refreshed === 1 ? "" : "s"}.` : "Add a URL on a table first.");
   render();
 }
@@ -648,12 +759,23 @@ keepButton.addEventListener("click", async () => {
 });
 
 document.querySelector<HTMLButtonElement>("#export")!.addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+  const sheets = report.tiles.map((tile) => {
+    const view = prepared(tile.query);
+    if (view.error) return { name: tile.title, rows: [{ note: view.error }] };
+    const result = runQuery(view.table, view.pageFilters, view.query);
+    if (result.error) return { name: tile.title, rows: [{ note: result.error }] };
+    return { name: tile.title, rows: result.rows };
+  });
+  const bytes = workbookBytes(sheets);
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  const blob = new Blob([copy], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = "report.json";
+  link.download = `${report.name || "boardlite"}.xlsx`;
   link.click();
   URL.revokeObjectURL(link.href);
+  renderStatus(sheets.length ? "Excel file downloaded. Each tile is a sheet." : "Excel file downloaded. Add a tile to include results.");
 });
 
 document.querySelector<HTMLInputElement>("#import")!.addEventListener("change", async (event) => {
@@ -666,11 +788,8 @@ document.querySelector<HTMLInputElement>("#import")!.addEventListener("change", 
     renderStatus("That JSON is not a report.");
     return;
   }
-  confirmDialog.showModal();
-  const choice = await new Promise<string>((resolve) => {
-    confirmDialog.addEventListener("close", () => resolve(confirmDialog.returnValue), { once: true });
-  });
-  if (choice !== "ok") return;
+  const ok = await askConfirm("Replace the current report with this file?");
+  if (!ok) return;
   report = parsed;
   opened.clear();
   renderStatus(report.tables.length ? `Open ${report.tables.map((table) => table.sourceName || table.name).join(", ")}.` : "Report imported.");
@@ -678,12 +797,47 @@ document.querySelector<HTMLInputElement>("#import")!.addEventListener("change", 
   render();
 });
 
+document.querySelector<HTMLButtonElement>("#undo")!.addEventListener("click", () => undo());
+
+document.querySelector<HTMLButtonElement>("#new-report")!.addEventListener("click", async () => {
+  if (report.name === "Untitled" && report.tiles.length === 0 && report.tables.length === 0) return;
+  await persist();
+  const id = uid();
+  const created = emptyReport();
+  library.reports.push({ id, name: created.name, report: created });
+  library.activeId = id;
+  report = created;
+  opened.clear();
+  undoStack.length = 0;
+  await persist();
+  render();
+});
+
+reportsSelect.addEventListener("change", async () => {
+  const next = library.reports.find((item) => item.id === reportsSelect.value);
+  if (!next || next.id === library.activeId) return;
+  await persist();
+  library.activeId = next.id;
+  report = next.report;
+  opened.clear();
+  undoStack.length = 0;
+  await persist();
+  render();
+  if (report.tables.length) renderStatus(`Open ${report.tables.map((table) => table.sourceName || table.name).join(", ")}.`);
+});
+
 const fromHash = decodeReport(location.hash);
 if (fromHash) {
   report = fromHash;
   shared = true;
 } else {
-  report = (await loadStoredReport()) ?? emptyReport();
+  try {
+    library = await loadLibrary();
+  } catch {
+    library = { version: 1, activeId: "untitled", reports: [{ id: "untitled", name: "Untitled", report: emptyReport() }] };
+  }
+  report = library.reports.find((item) => item.id === library.activeId)?.report ?? library.reports[0].report;
+  library.activeId = library.reports.find((item) => item.report === report)?.id ?? library.reports[0].id;
 }
 render();
 if (report.tables.length) renderStatus(`Open ${report.tables.map((table) => table.sourceName || table.name).join(", ")}.`);

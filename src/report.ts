@@ -41,9 +41,13 @@ export type Report = {
   tiles: Tile[];
 };
 
+export type SavedReport = { id: string; name: string; report: Report };
+export type Library = { version: 1; activeId: string; reports: SavedReport[] };
+
 const DB = "boardlite";
 const STORE = "kv";
-const KEY = "report";
+const LEGACY_KEY = "report";
+const LIBRARY_KEY = "library";
 
 export function emptyReport(name = "Untitled"): Report {
   return { version: 2, name, tables: [], relationships: [], measures: [], pageFilters: [], tiles: [] };
@@ -101,21 +105,47 @@ export function decodeReport(hash: string): Report | null {
   }
 }
 
-export async function saveReport(report: Report): Promise<"saved" | "unavailable"> {
+export function isLibrary(value: unknown): value is Library {
+  if (!value || typeof value !== "object") return false;
+  const library = value as Library;
+  return library.version === 1 && typeof library.activeId === "string" && Array.isArray(library.reports);
+}
+
+export function libraryFromStored(storedLibrary: unknown, storedReport: unknown): { library: Library; usedLegacy: boolean } {
+  if (isLibrary(storedLibrary)) return { library: storedLibrary, usedLegacy: false };
+  const legacy = normalizeReport(storedReport);
+  if (legacy) {
+    return {
+      library: { version: 1, activeId: "legacy", reports: [{ id: "legacy", name: legacy.name || "Untitled", report: legacy }] },
+      usedLegacy: true,
+    };
+  }
+  const report = emptyReport();
+  return { library: { version: 1, activeId: "untitled", reports: [{ id: "untitled", name: report.name, report }] }, usedLegacy: false };
+}
+
+async function database() {
+  return openDB(DB, 1, { upgrade(base) { if (!base.objectStoreNames.contains(STORE)) base.createObjectStore(STORE); } });
+}
+
+export async function loadLibrary(): Promise<Library> {
+  const db = await database();
+  const stored = await db.get(STORE, LIBRARY_KEY);
+  const legacy = isLibrary(stored) ? null : await db.get(STORE, LEGACY_KEY);
+  const result = libraryFromStored(stored, legacy);
+  if (result.usedLegacy) {
+    await db.put(STORE, result.library, LIBRARY_KEY);
+    await db.delete(STORE, LEGACY_KEY);
+  }
+  return result.library;
+}
+
+export async function saveLibrary(library: Library): Promise<"saved" | "unavailable"> {
   try {
-    const db = await openDB(DB, 1, { upgrade(database) { database.createObjectStore(STORE); } });
-    await db.put(STORE, report, KEY);
+    const db = await database();
+    await db.put(STORE, library, LIBRARY_KEY);
     return "saved";
   } catch {
     return "unavailable";
-  }
-}
-
-export async function loadStoredReport(): Promise<Report | null> {
-  try {
-    const db = await openDB(DB, 1, { upgrade(database) { database.createObjectStore(STORE); } });
-    return normalizeReport(await db.get(STORE, KEY));
-  } catch {
-    return null;
   }
 }
