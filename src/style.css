@@ -20,7 +20,8 @@ button { cursor: pointer; }
 .mark { margin: 0; color: var(--accent); font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; }
 h1 { margin: 0; font-size: 1.6rem; }
 .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-#status, .drop { min-height: 1.4rem; color: var(--muted); }
+#status, .drop, .path { min-height: 1.4rem; color: var(--muted); }
+.path { margin-bottom: 0.8rem; }
 .drop { border: 1px dashed var(--line); border-radius: 10px; padding: 0.7rem; text-align: center; }
 body.readonly .edit { display: none; }
 #model { display: grid; gap: 0.5rem; margin-bottom: 0.8rem; }

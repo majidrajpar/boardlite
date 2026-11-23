@@ -305,6 +305,10 @@ function renderModel() {
   }
   const link = document.createElement("div");
   link.className = "model-card edit";
+  const linkHelp = document.createElement("p");
+  linkHelp.className = "note";
+  linkHelp.textContent = "Connect a column on the chart's table to the matching column on the second file.";
+  link.append(linkHelp);
   const fromTable = select(report.tables.map((table) => table.name), "", "From table");
   const fromColumn = select([], "", "From column");
   const toTable = select(report.tables.map((table) => table.name), "", "To table");
