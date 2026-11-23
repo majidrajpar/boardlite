@@ -1,0 +1,6 @@
+city,note,amount
+Karachi,a;b;c,€10.50
+München,"keep;comma,delimiter",€3
+東京,semi;only,£100.00
+Oslo,plain,0
+Québec,neg,-2.5

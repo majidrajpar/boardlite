@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BoardLite</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <p class="mark">BoardLite</p>
+        <h1 id="report-name">Untitled</h1>
+      </div>
+      <div class="actions">
+        <label class="file edit">Open files<input id="file" type="file" multiple accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>
+        <button id="reload" type="button">Reload URLs</button>
+        <button id="share" class="edit" type="button">Copy link</button>
+        <button id="keep" type="button" hidden>Save a copy</button>
+        <button id="export" type="button">Export</button>
+        <label class="file edit">Import<input id="import" type="file" accept="application/json,.json" /></label>
+      </div>
+    </header>
+    <p id="status" role="status"></p>
+    <p id="drop" class="drop">Drop CSV or Excel files here.</p>
+    <section id="model"></section>
+    <section id="columns"></section>
+    <form id="page-filters"></form>
+    <form id="add-tile"></form>
+    <main id="canvas"></main>
+    <dialog id="confirm">
+      <p>Replace the current report with this file?</p>
+      <form method="dialog">
+        <button value="cancel">Cancel</button>
+        <button value="ok">Replace</button>
+      </form>
+    </dialog>
+    <footer class="top credit">
+      <a href="https://majidrajpar.github.io/portfolio_my/">Majid Mumtaz</a>
+      <a href="mailto:majidrajpar@gmail.com">majidrajpar@gmail.com</a>
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

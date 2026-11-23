@@ -1,0 +1,839 @@
+{
+  "headerWhitespaceRule": "trim headers before dedupe and before type inference",
+  "nullRule": "empty or whitespace-only cells are null; the strings N/A, null, NULL, None, -, #N/A are text",
+  "emptyHeaderRule": "after trim, a header that is empty is named column; the first keeps column and later duplicates become column_2, column_3",
+  "dedupeRule": "suffixes are applied after trim, in file order; the first header keeps its trimmed name and the next duplicates get _2, _3",
+  "blankLineRule": "a completely empty line is skipped and is not a data row; a terminating newline after the last record is not an extra row",
+  "raggedRowRule": "missing trailing cells are null; cells past the header count are ignored",
+  "valueTrimRule": "only whitespace-only cells become null; surrounding spaces on a non-empty token are not stripped and would block number, date, and boolean inference",
+  "files": [
+    {
+      "path": "clean/sales_small.csv",
+      "kind": "csv",
+      "expect": "load",
+      "refuseReason": null,
+      "notes": "40 data rows, CRLF, UTF-8 no BOM. One empty revenue cell (row 10). Zero and negative amounts included. Bool case varies.",
+      "columns": [
+        {
+          "header": "date",
+          "expectType": "date",
+          "expectNameAfterDedupe": "date"
+        },
+        {
+          "header": "region",
+          "expectType": "text",
+          "expectNameAfterDedupe": "region"
+        },
+        {
+          "header": "product",
+          "expectType": "text",
+          "expectNameAfterDedupe": "product"
+        },
+        {
+          "header": "units",
+          "expectType": "number",
+          "expectNameAfterDedupe": "units"
+        },
+        {
+          "header": "revenue",
+          "expectType": "number",
+          "expectNameAfterDedupe": "revenue"
+        },
+        {
+          "header": "active",
+          "expectType": "boolean",
+          "expectNameAfterDedupe": "active"
+        }
+      ]
+    },
+    {
+      "path": "dirty/sales_messy.csv",
+      "kind": "csv",
+      "expect": "load",
+      "refuseReason": null,
+      "notes": "UTF-8 BOM. 220 data rows. Mixed CRLF and LF. 5 blank lines (skipped, not rows). Header ' region ' trims to region. Second revenue becomes revenue_2 (US thousands, text). Whitespace-only header becomes column. One Yes poisons flag_mixed. One 12.5.1 poisons qty_bad. Trailing extra comma on some rows (ignored). Some short rows (missing trailing cells are null). Currency column is number. serial_lookalike stays number, not a date.",
+      "columns": [
+        {
+          "header": "date",
+          "expectType": "date",
+          "expectNameAfterDedupe": "date"
+        },
+        {
+          "header": " region ",
+          "expectType": "text",
+          "expectNameAfterDedupe": "region"
+        },
+        {
+          "header": "product",
+          "expectType": "text",
+          "expectNameAfterDedupe": "product"
+        },
+        {
+          "header": "units",
+          "expectType": "number",
+          "expectNameAfterDedupe": "units"
+        },
+        {
+          "header": "revenue",
+          "expectType": "number",
+          "expectNameAfterDedupe": "revenue"
+        },
+        {
+          "header": "revenue",
+          "expectType": "text",
+          "expectNameAfterDedupe": "revenue_2"
+        },
+        {
+          "header": "eu_amount",
+          "expectType": "text",
+          "expectNameAfterDedupe": "eu_amount"
+        },
+        {
+          "header": "pct",
+          "expectType": "text",
+          "expectNameAfterDedupe": "pct"
+        },
+        {
+          "header": "accounting",
+          "expectType": "text",
+          "expectNameAfterDedupe": "accounting"
+        },
+        {
+          "header": "sentinel",
+          "expectType": "text",
+          "expectNameAfterDedupe": "sentinel"
+        },
+        {
+          "header": "dirty_date",
+          "expectType": "text",
+          "expectNameAfterDedupe": "dirty_date"
+        },
+        {
+          "header": "flag_mixed",
+          "expectType": "text",
+          "expectNameAfterDedupe": "flag_mixed"
+        },
+        {
+          "header": "flag_ok",
+          "expectType": "boolean",
+          "expectNameAfterDedupe": "flag_ok"
+        },
+        {
+          "header": "qty_bad",
+          "expectType": "text",
+          "expectNameAfterDedupe": "qty_bad"
+        },
+        {
+          "header": "   ",
+          "expectType": "text",
+          "expectNameAfterDedupe": "column"
+        },
+        {
+          "header": "serial_lookalike",
+          "expectType": "number",
+          "expectNameAfterDedupe": "serial_lookalike"
+        }
+      ]
+    },
+    {
+      "path": "dirty/headers_only.csv",
+      "kind": "csv",
+      "expect": "refuse",
+      "refuseReason": "headers_only",
+      "notes": "Single header line and no data row. No trailing newline, so a terminator is not an extra record.",
+      "columns": []
+    },
+    {
+      "path": "dirty/empty.csv",
+      "kind": "csv",
+      "expect": "refuse",
+      "refuseReason": "empty",
+      "notes": "Zero bytes.",
+      "columns": []
+    },
+    {
+      "path": "dirty/empty_whitespace.csv",
+      "kind": "csv",
+      "expect": "load",
+      "refuseReason": null,
+      "notes": "Header plus 5 data rows of whitespace-only cells. Valid null rows, not an empty-file refusal. CRLF.",
+      "columns": [
+        {
+          "header": "a",
+          "expectType": "null-column",
+          "expectNameAfterDedupe": "a"
+        },
+        {
+          "header": "b",
+          "expectType": "null-column",
+          "expectNameAfterDedupe": "b"
+        },
+        {
+          "header": "c",
+          "expectType": "null-column",
+          "expectNameAfterDedupe": "c"
+        }
+      ]
+    },
+    {
+      "path": "boundary/rows_50000.csv",
+      "kind": "csv",
+      "expect": "load",
+      "refuseReason": null,
+      "notes": "Header + exactly 50000 data rows, CRLF, no multiline fields. Columns id (int), category (alpha|beta|gamma|delta), amount (plain decimal, can be negative), date (YYYY-MM-DD cycling 2020-2024, day<=28).",
+      "columns": [
+        {
+          "header": "id",
+          "expectType": "number",
+          "expectNameAfterDedupe": "id"
+        },
+        {
+          "header": "category",
+          "expectType": "text",
+          "expectNameAfterDedupe": "category"
+        },
+        {
+          "header": "amount",
+          "expectType": "number",
+          "expectNameAfterDedupe": "amount"
+        },
+        {
+          "header": "date",
+          "expectType": "date",
+          "expectNameAfterDedupe": "date"
+        }
+      ]
+    },
+    {
+      "path": "boundary/rows_50001.csv",
+      "kind": "csv",
+      "expect": "refuse",
+      "refuseReason": "too_many_rows",
+      "notes": "Header + exactly 50001 data rows. Same 4-column shape as rows_50000.csv.",
+      "columns": []
+    },
+    {
+      "path": "boundary/cols_100.csv",
+      "kind": "csv",
+      "expect": "load",
+      "refuseReason": null,
+      "notes": "100 columns c001-c100, 3 data rows, every value an integer. At the column cap.",
+      "columns": [
+        {
+          "header": "c001",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c001"
+        },
+        {
+          "header": "c002",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c002"
+        },
+        {
+          "header": "c003",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c003"
+        },
+        {
+          "header": "c004",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c004"
+        },
+        {
+          "header": "c005",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c005"
+        },
+        {
+          "header": "c006",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c006"
+        },
+        {
+          "header": "c007",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c007"
+        },
+        {
+          "header": "c008",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c008"
+        },
+        {
+          "header": "c009",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c009"
+        },
+        {
+          "header": "c010",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c010"
+        },
+        {
+          "header": "c011",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c011"
+        },
+        {
+          "header": "c012",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c012"
+        },
+        {
+          "header": "c013",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c013"
+        },
+        {
+          "header": "c014",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c014"
+        },
+        {
+          "header": "c015",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c015"
+        },
+        {
+          "header": "c016",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c016"
+        },
+        {
+          "header": "c017",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c017"
+        },
+        {
+          "header": "c018",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c018"
+        },
+        {
+          "header": "c019",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c019"
+        },
+        {
+          "header": "c020",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c020"
+        },
+        {
+          "header": "c021",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c021"
+        },
+        {
+          "header": "c022",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c022"
+        },
+        {
+          "header": "c023",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c023"
+        },
+        {
+          "header": "c024",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c024"
+        },
+        {
+          "header": "c025",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c025"
+        },
+        {
+          "header": "c026",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c026"
+        },
+        {
+          "header": "c027",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c027"
+        },
+        {
+          "header": "c028",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c028"
+        },
+        {
+          "header": "c029",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c029"
+        },
+        {
+          "header": "c030",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c030"
+        },
+        {
+          "header": "c031",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c031"
+        },
+        {
+          "header": "c032",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c032"
+        },
+        {
+          "header": "c033",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c033"
+        },
+        {
+          "header": "c034",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c034"
+        },
+        {
+          "header": "c035",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c035"
+        },
+        {
+          "header": "c036",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c036"
+        },
+        {
+          "header": "c037",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c037"
+        },
+        {
+          "header": "c038",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c038"
+        },
+        {
+          "header": "c039",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c039"
+        },
+        {
+          "header": "c040",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c040"
+        },
+        {
+          "header": "c041",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c041"
+        },
+        {
+          "header": "c042",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c042"
+        },
+        {
+          "header": "c043",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c043"
+        },
+        {
+          "header": "c044",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c044"
+        },
+        {
+          "header": "c045",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c045"
+        },
+        {
+          "header": "c046",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c046"
+        },
+        {
+          "header": "c047",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c047"
+        },
+        {
+          "header": "c048",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c048"
+        },
+        {
+          "header": "c049",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c049"
+        },
+        {
+          "header": "c050",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c050"
+        },
+        {
+          "header": "c051",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c051"
+        },
+        {
+          "header": "c052",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c052"
+        },
+        {
+          "header": "c053",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c053"
+        },
+        {
+          "header": "c054",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c054"
+        },
+        {
+          "header": "c055",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c055"
+        },
+        {
+          "header": "c056",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c056"
+        },
+        {
+          "header": "c057",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c057"
+        },
+        {
+          "header": "c058",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c058"
+        },
+        {
+          "header": "c059",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c059"
+        },
+        {
+          "header": "c060",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c060"
+        },
+        {
+          "header": "c061",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c061"
+        },
+        {
+          "header": "c062",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c062"
+        },
+        {
+          "header": "c063",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c063"
+        },
+        {
+          "header": "c064",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c064"
+        },
+        {
+          "header": "c065",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c065"
+        },
+        {
+          "header": "c066",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c066"
+        },
+        {
+          "header": "c067",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c067"
+        },
+        {
+          "header": "c068",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c068"
+        },
+        {
+          "header": "c069",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c069"
+        },
+        {
+          "header": "c070",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c070"
+        },
+        {
+          "header": "c071",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c071"
+        },
+        {
+          "header": "c072",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c072"
+        },
+        {
+          "header": "c073",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c073"
+        },
+        {
+          "header": "c074",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c074"
+        },
+        {
+          "header": "c075",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c075"
+        },
+        {
+          "header": "c076",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c076"
+        },
+        {
+          "header": "c077",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c077"
+        },
+        {
+          "header": "c078",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c078"
+        },
+        {
+          "header": "c079",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c079"
+        },
+        {
+          "header": "c080",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c080"
+        },
+        {
+          "header": "c081",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c081"
+        },
+        {
+          "header": "c082",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c082"
+        },
+        {
+          "header": "c083",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c083"
+        },
+        {
+          "header": "c084",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c084"
+        },
+        {
+          "header": "c085",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c085"
+        },
+        {
+          "header": "c086",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c086"
+        },
+        {
+          "header": "c087",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c087"
+        },
+        {
+          "header": "c088",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c088"
+        },
+        {
+          "header": "c089",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c089"
+        },
+        {
+          "header": "c090",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c090"
+        },
+        {
+          "header": "c091",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c091"
+        },
+        {
+          "header": "c092",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c092"
+        },
+        {
+          "header": "c093",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c093"
+        },
+        {
+          "header": "c094",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c094"
+        },
+        {
+          "header": "c095",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c095"
+        },
+        {
+          "header": "c096",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c096"
+        },
+        {
+          "header": "c097",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c097"
+        },
+        {
+          "header": "c098",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c098"
+        },
+        {
+          "header": "c099",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c099"
+        },
+        {
+          "header": "c100",
+          "expectType": "number",
+          "expectNameAfterDedupe": "c100"
+        }
+      ]
+    },
+    {
+      "path": "boundary/cols_101.csv",
+      "kind": "csv",
+      "expect": "refuse",
+      "refuseReason": "too_many_columns",
+      "notes": "101 columns c001-c101, 3 integer data rows.",
+      "columns": []
+    },
+    {
+      "path": "reject/notes.json",
+      "kind": "reject",
+      "expect": "refuse",
+      "refuseReason": "extension",
+      "notes": "Tiny JSON object. Refused on extension before parse.",
+      "columns": []
+    },
+    {
+      "path": "reject/legacy.xls",
+      "kind": "reject",
+      "expect": "refuse",
+      "refuseReason": "extension",
+      "notes": "Literal text 'not really xls'. Refused on extension before parse.",
+      "columns": []
+    },
+    {
+      "path": "xlsx/sales_dates.xlsx",
+      "kind": "xlsx",
+      "expect": "load",
+      "refuseReason": null,
+      "notes": "First sheet Data, 25 rows. order_date cells are Excel date/datetime values (serial + yyyy-mm-dd number format), not strings. Row 15 is a datetime; store calendar date only. Row 10 revenue is blank. Second sheet IgnoreMe contains SHOULD_NOT_BE_READ and must be ignored.",
+      "columns": [
+        {
+          "header": "order_date",
+          "expectType": "date",
+          "expectNameAfterDedupe": "order_date"
+        },
+        {
+          "header": "units",
+          "expectType": "number",
+          "expectNameAfterDedupe": "units"
+        },
+        {
+          "header": "revenue",
+          "expectType": "number",
+          "expectNameAfterDedupe": "revenue"
+        },
+        {
+          "header": "label",
+          "expectType": "text",
+          "expectNameAfterDedupe": "label"
+        }
+      ]
+    },
+    {
+      "path": "xlsx/first_sheet_empty.xlsx",
+      "kind": "xlsx",
+      "expect": "refuse",
+      "refuseReason": "empty",
+      "notes": "First sheet Empty has no cells. Second sheet Hidden has a valid table and must be ignored. No separate no-table reason code; treat as empty.",
+      "columns": []
+    },
+    {
+      "path": "xlsx/duplicate_headers.xlsx",
+      "kind": "xlsx",
+      "expect": "load",
+      "refuseReason": null,
+      "notes": "Sheet Data. revenue and revenue_2 are real Excel numbers. price is text with a single currency prefix or a plain decimal (and one blank) so the column infers as number. 10 data rows.",
+      "columns": [
+        {
+          "header": "sku",
+          "expectType": "text",
+          "expectNameAfterDedupe": "sku"
+        },
+        {
+          "header": "revenue",
+          "expectType": "number",
+          "expectNameAfterDedupe": "revenue"
+        },
+        {
+          "header": "revenue",
+          "expectType": "number",
+          "expectNameAfterDedupe": "revenue_2"
+        },
+        {
+          "header": "price",
+          "expectType": "number",
+          "expectNameAfterDedupe": "price"
+        }
+      ]
+    },
+    {
+      "path": "dirty/utf8_no_bom.csv",
+      "kind": "csv",
+      "expect": "load",
+      "refuseReason": null,
+      "notes": "UTF-8 no BOM, comma delimiter, CRLF, 5 rows. note contains semicolons so a sniffer must not switch to semicolon. amount is currency-prefixed or plain decimal (number). Euro and non-ASCII cities included.",
+      "columns": [
+        {
+          "header": "city",
+          "expectType": "text",
+          "expectNameAfterDedupe": "city"
+        },
+        {
+          "header": "note",
+          "expectType": "text",
+          "expectNameAfterDedupe": "note"
+        },
+        {
+          "header": "amount",
+          "expectType": "number",
+          "expectNameAfterDedupe": "amount"
+        }
+      ]
+    }
+  ]
+}
